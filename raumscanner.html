@@ -1,0 +1,551 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black">
+  <meta name="apple-mobile-web-app-title" content="RaumScanner">
+  <meta name="theme-color" content="#007AFF">
+  <title>RaumScanner</title>
+  <style>
+    :root {
+      --blue: #007AFF; --green: #34C759; --red: #FF3B30;
+      --bg: #F2F2F7; --card: #FFFFFF;
+      --text: #1C1C1E; --text2: #3C3C43; --text3: #8E8E93;
+      --border: #C6C6C8; --radius: 12px;
+      --safe-top: env(safe-area-inset-top, 44px);
+      --safe-bottom: env(safe-area-inset-bottom, 34px);
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Helvetica Neue', sans-serif; background: var(--bg); color: var(--text); overflow: hidden; height: 100vh; }
+    .app { display: flex; flex-direction: column; height: 100vh; height: -webkit-fill-available; }
+    .status-bar { height: var(--safe-top); background: var(--card); min-height: 44px; }
+    .nav-header { background: var(--card); padding: 8px 16px 12px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; }
+    .nav-title { font-size: 17px; font-weight: 600; }
+    .content { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; padding: 16px; padding-bottom: calc(var(--safe-bottom) + 90px); }
+    .tab-bar { display: flex; background: var(--card); border-top: 1px solid var(--border); padding-bottom: var(--safe-bottom); }
+    .tab-item { flex: 1; display: flex; flex-direction: column; align-items: center; padding: 8px 0; gap: 3px; cursor: pointer; color: var(--text3); }
+    .tab-item.active { color: var(--blue); }
+    .tab-icon { font-size: 22px; }
+    .tab-label { font-size: 10px; font-weight: 500; }
+    .card { background: var(--card); border-radius: var(--radius); overflow: hidden; margin-bottom: 16px; }
+    .card-row { display: flex; align-items: center; padding: 12px 16px; border-bottom: 1px solid var(--border); gap: 12px; }
+    .card-row:last-child { border-bottom: none; }
+    .card-icon { width: 36px; height: 36px; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 18px; flex-shrink: 0; }
+    .card-content { flex: 1; }
+    .card-label { font-size: 17px; }
+    .card-sublabel { font-size: 13px; color: var(--text3); margin-top: 2px; }
+    .btn { display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; padding: 16px; border-radius: var(--radius); border: none; font-size: 17px; font-weight: 600; cursor: pointer; transition: opacity 0.15s; }
+    .btn:active { opacity: 0.7; }
+    .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    .btn-primary { background: var(--blue); color: white; }
+    .btn-success { background: var(--green); color: white; }
+    .btn-secondary { background: var(--bg); color: var(--blue); border: 1.5px solid var(--border); }
+    .form-group { margin-bottom: 16px; }
+    .form-label { font-size: 13px; color: var(--text3); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 6px; display: block; padding-left: 4px; }
+    .form-input { width: 100%; padding: 14px 16px; border-radius: var(--radius); border: 1.5px solid var(--border); background: var(--card); font-size: 17px; color: var(--text); -webkit-appearance: none; }
+    .form-input:focus { outline: none; border-color: var(--blue); }
+    .section-header { font-size: 13px; color: var(--text3); text-transform: uppercase; letter-spacing: 0.05em; margin: 20px 0 8px 4px; }
+    .screen { display: none; }
+    .screen.active { display: block; }
+    #scanner-container { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: black; z-index: 100; display: none; flex-direction: column; }
+    #scanner-container.active { display: flex; }
+    #scanner-video { flex: 1; object-fit: cover; width: 100%; }
+    #scanner-canvas { display: none; }
+    .scanner-overlay { position: absolute; top: 0; left: 0; right: 0; bottom: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; pointer-events: none; }
+    .scanner-frame { width: 250px; height: 250px; border: 3px solid white; border-radius: 20px; box-shadow: 0 0 0 9999px rgba(0,0,0,0.55); }
+    .scanner-text { color: white; font-size: 15px; margin-top: 20px; text-align: center; padding: 0 32px; }
+    .scanner-cancel { position: absolute; bottom: calc(var(--safe-bottom) + 24px); left: 50%; transform: translateX(-50%); background: rgba(255,255,255,0.15); color: white; border: 1.5px solid rgba(255,255,255,0.4); border-radius: 30px; padding: 14px 40px; font-size: 17px; font-weight: 600; pointer-events: all; cursor: pointer; }
+    .success-icon { width: 80px; height: 80px; background: var(--green); border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 40px; margin: 32px auto 16px; animation: pop 0.3s ease-out; }
+    @keyframes pop { 0% { transform: scale(0.5); opacity: 0; } 70% { transform: scale(1.1); } 100% { transform: scale(1); opacity: 1; } }
+    .pin-display { display: flex; gap: 14px; justify-content: center; margin: 24px 0; }
+    .pin-dot { width: 16px; height: 16px; border-radius: 50%; border: 2px solid var(--text3); background: transparent; transition: background 0.1s; }
+    .pin-dot.filled { background: var(--blue); border-color: var(--blue); }
+    .pin-pad { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; max-width: 280px; margin: 0 auto; }
+    .pin-btn { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 18px; font-size: 24px; font-weight: 300; cursor: pointer; }
+    .pin-btn:active { background: var(--border); }
+    .room-card { background: var(--card); border-radius: var(--radius); margin-bottom: 12px; overflow: hidden; }
+    .room-header { display: flex; align-items: center; padding: 13px 16px; background: var(--blue); color: white; gap: 10px; }
+    .room-title { flex: 1; font-size: 17px; font-weight: 600; }
+    .room-count { background: rgba(255,255,255,0.25); padding: 2px 10px; border-radius: 20px; font-size: 13px; font-weight: 600; }
+    .student-row { display: flex; align-items: center; padding: 10px 16px; border-bottom: 1px solid var(--border); gap: 10px; }
+    .student-row:last-child { border-bottom: none; }
+    .student-avatar { width: 36px; height: 36px; border-radius: 50%; background: #E3F0FF; display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 700; color: var(--blue); flex-shrink: 0; }
+    .student-name { flex: 1; font-size: 15px; font-weight: 500; }
+    .student-meta { font-size: 12px; color: var(--text3); }
+    .status-pulse { width: 8px; height: 8px; border-radius: 50%; background: var(--green); animation: pulse 2s infinite; display: inline-block; }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
+    .empty-state { text-align: center; padding: 48px 24px; color: var(--text3); }
+    .empty-icon { font-size: 48px; margin-bottom: 16px; }
+    .empty-title { font-size: 17px; font-weight: 600; color: var(--text2); margin-bottom: 8px; }
+    .qr-result { display: none; flex-direction: column; align-items: center; padding: 16px; }
+    #qr-canvas { border-radius: 8px; }
+    .toast { position: fixed; bottom: calc(var(--safe-bottom) + 85px); left: 50%; transform: translateX(-50%) translateY(10px); background: rgba(0,0,0,0.8); color: white; padding: 11px 22px; border-radius: 30px; font-size: 14px; font-weight: 500; opacity: 0; transition: all 0.25s; white-space: nowrap; z-index: 999; }
+    .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+    .spinner { display: inline-block; width: 18px; height: 18px; border: 2px solid rgba(255,255,255,0.3); border-top-color: white; border-radius: 50%; animation: spin 0.7s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .spinner-dark { border-color: rgba(0,0,0,0.15); border-top-color: var(--blue); }
+  </style>
+</head>
+<body>
+<div class="app">
+  <div class="status-bar"></div>
+  <div class="nav-header">
+    <div style="width:60px"></div>
+    <div class="nav-title" id="nav-title">RaumScanner</div>
+    <div style="width:60px; text-align:right; font-size:13px; color:var(--text3);" id="nav-right"></div>
+  </div>
+  <div class="content">
+
+    <!-- SETUP -->
+    <div class="screen" id="screen-setup">
+      <div style="text-align:center;padding:32px 0 28px">
+        <div style="font-size:60px;margin-bottom:14px">🏫</div>
+        <div style="font-size:22px;font-weight:700;margin-bottom:8px">Willkommen</div>
+        <div style="font-size:15px;color:var(--text3)">Gib einmal deinen Namen und deine Klasse ein – das wird für nächste Male gespeichert.</div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Dein Name</label>
+        <input type="text" class="form-input" id="setup-name" placeholder="z.B. Max Mustermann" autocomplete="name">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Deine Klasse</label>
+        <input type="text" class="form-input" id="setup-class" placeholder="z.B. 7a" autocomplete="off">
+      </div>
+      <button class="btn btn-primary" onclick="saveSetup()">Weiter →</button>
+    </div>
+
+    <!-- STUDENT MAIN -->
+    <div class="screen" id="screen-student">
+      <div style="text-align:center;padding:28px 0 32px">
+        <div style="font-size:52px;margin-bottom:12px">📍</div>
+        <div style="font-size:22px;font-weight:700" id="greeting">Hallo!</div>
+        <div style="font-size:15px;color:var(--text3);margin-top:4px" id="student-class-display"></div>
+      </div>
+      <button class="btn btn-primary" id="checkin-btn" onclick="startScanner()" style="font-size:18px;padding:20px">
+        📷 QR-Code scannen & einchecken
+      </button>
+      <div id="last-checkin-card" style="display:none">
+        <div class="section-header">Letzter Check-in</div>
+        <div class="card">
+          <div class="card-row">
+            <div class="card-icon" style="background:#E5F9EC">✅</div>
+            <div class="card-content">
+              <div class="card-label" id="last-room-name">—</div>
+              <div class="card-sublabel" id="last-time">—</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <button class="btn btn-secondary" onclick="showSetup()" style="margin-top:8px">✏️ Namen ändern</button>
+    </div>
+
+    <!-- SUCCESS -->
+    <div class="screen" id="screen-success">
+      <div class="success-icon">✓</div>
+      <div style="text-align:center">
+        <div style="font-size:22px;font-weight:700;margin-bottom:8px">Eingecheckt!</div>
+        <div style="font-size:17px;color:var(--text3)" id="success-room">—</div>
+        <div style="font-size:14px;color:var(--text3);margin-top:4px" id="success-time">—</div>
+      </div>
+      <div style="margin-top:32px">
+        <button class="btn btn-success" onclick="showScreen('screen-student')">Fertig ✓</button>
+      </div>
+    </div>
+
+    <!-- TEACHER PIN -->
+    <div class="screen" id="screen-teacher-pin">
+      <div style="text-align:center;padding:28px 0">
+        <div style="font-size:48px;margin-bottom:12px">🔒</div>
+        <div style="font-size:20px;font-weight:700;margin-bottom:4px">Lehrer-Zugang</div>
+        <div style="font-size:14px;color:var(--text3)">PIN eingeben</div>
+      </div>
+      <div class="pin-display">
+        <div class="pin-dot" id="pd0"></div>
+        <div class="pin-dot" id="pd1"></div>
+        <div class="pin-dot" id="pd2"></div>
+        <div class="pin-dot" id="pd3"></div>
+      </div>
+      <div class="pin-pad">
+        <button class="pin-btn" onclick="pinInput('1')">1</button>
+        <button class="pin-btn" onclick="pinInput('2')">2</button>
+        <button class="pin-btn" onclick="pinInput('3')">3</button>
+        <button class="pin-btn" onclick="pinInput('4')">4</button>
+        <button class="pin-btn" onclick="pinInput('5')">5</button>
+        <button class="pin-btn" onclick="pinInput('6')">6</button>
+        <button class="pin-btn" onclick="pinInput('7')">7</button>
+        <button class="pin-btn" onclick="pinInput('8')">8</button>
+        <button class="pin-btn" onclick="pinInput('9')">9</button>
+        <button class="pin-btn" onclick="pinBackspace()" style="color:var(--text3);font-size:16px">⌫</button>
+        <button class="pin-btn" onclick="pinInput('0')">0</button>
+        <button class="pin-btn" onclick="pinClear()" style="color:var(--red);font-size:14px">✕</button>
+      </div>
+    </div>
+
+    <!-- TEACHER DASHBOARD -->
+    <div class="screen" id="screen-teacher">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+        <div style="display:flex;align-items:center;gap:7px">
+          <span class="status-pulse"></span>
+          <span style="font-size:13px;color:var(--text3)">Live · alle 10 Sek.</span>
+        </div>
+        <span style="font-size:13px;color:var(--text3)" id="last-update">Lädt...</span>
+      </div>
+      <div id="teacher-dashboard">
+        <div class="empty-state">
+          <div class="spinner spinner-dark" style="width:28px;height:28px;margin:0 auto"></div>
+        </div>
+      </div>
+
+      <div class="section-header">QR-Codes für Räume erstellen</div>
+      <div class="card">
+        <div style="padding:16px">
+          <div class="form-group">
+            <label class="form-label">Raum-ID (kurz, ohne Leerzeichen)</label>
+            <input type="text" class="form-input" id="qr-id" placeholder="z.B. BIBLIO oder R101">
+          </div>
+          <div class="form-group" style="margin-bottom:12px">
+            <label class="form-label">Raum-Name</label>
+            <input type="text" class="form-input" id="qr-name" placeholder="z.B. Bibliothek">
+          </div>
+          <button class="btn btn-primary" onclick="generateQR()">QR-Code erstellen</button>
+        </div>
+        <div class="qr-result" id="qr-result">
+          <canvas id="qr-canvas" style="border-radius:8px"></canvas>
+          <div style="font-size:13px;color:var(--text3);margin-top:8px;text-align:center" id="qr-label"></div>
+          <button class="btn btn-secondary" onclick="downloadQR()" style="margin-top:12px;max-width:200px">💾 Als Bild speichern</button>
+        </div>
+      </div>
+
+      <div style="margin-top:8px">
+        <button class="btn btn-secondary" style="color:var(--red);border-color:var(--red)" onclick="teacherLogout()">Abmelden</button>
+      </div>
+    </div>
+
+  </div><!-- end content -->
+
+  <div class="tab-bar">
+    <div class="tab-item active" id="tab-student" onclick="switchTab('student')">
+      <div class="tab-icon">👤</div>
+      <div class="tab-label">Schüler</div>
+    </div>
+    <div class="tab-item" id="tab-teacher" onclick="switchTab('teacher')">
+      <div class="tab-icon">👨‍🏫</div>
+      <div class="tab-label">Lehrer</div>
+    </div>
+  </div>
+</div>
+
+<!-- Scanner fullscreen -->
+<div id="scanner-container">
+  <video id="scanner-video" autoplay playsinline muted></video>
+  <canvas id="scanner-canvas"></canvas>
+  <div class="scanner-overlay">
+    <div style="color:white;font-size:20px;font-weight:700;margin-bottom:20px;text-shadow:0 1px 4px rgba(0,0,0,.5)">QR-Code scannen</div>
+    <div class="scanner-frame"></div>
+    <div class="scanner-text">Halte die Kamera auf den QR-Code des Raums</div>
+  </div>
+  <button class="scanner-cancel" onclick="stopScanner()">Abbrechen</button>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
+<script>
+// ── CONFIG ──────────────────────────────────────────
+const CFG = {
+  base: 'https://cloudfiles.senckenberg-runkel.de/remote.php/dav/files/da65e470-cdc4-45fb-81f6-7438e75284ce',
+  user: 'da65e470-cdc4-45fb-81f6-7438e75284ce',
+  pass: 'NfR5L-mA8rH-Lg9rZ-cD6D2-TAPs6',
+  folder: 'RaumScanner/checkins',
+  pin: '1234',
+  poll: 10000
+};
+const AUTH = 'Basic ' + btoa(CFG.user + ':' + CFG.pass);
+
+// ── STATE ────────────────────────────────────────────
+let pinVal = '', teacherOk = false, pollTimer = null;
+let videoStream = null, scanning = false;
+
+// ── BOOT ─────────────────────────────────────────────
+window.addEventListener('load', () => {
+  const name = ls('name'), kl = ls('klasse');
+  if (name && kl) {
+    setGreeting(name, kl);
+    updateLastCard();
+    showScreen('screen-student');
+  } else {
+    showScreen('screen-setup');
+  }
+});
+
+// ── UTILS ─────────────────────────────────────────────
+function ls(k, v) {
+  try {
+    if (v === undefined) return localStorage.getItem('rs_' + k);
+    if (v === null) localStorage.removeItem('rs_' + k);
+    else localStorage.setItem('rs_' + k, v);
+  } catch(e) {}
+}
+function esc(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function sanitize(s) {
+  return s.toLowerCase()
+    .replace(/ä/g,'ae').replace(/ö/g,'oe').replace(/ü/g,'ue').replace(/ß/g,'ss')
+    .replace(/[^a-z0-9]/g,'_').replace(/_+/g,'_').replace(/^_|_$/g,'');
+}
+function fmtTime(iso) {
+  if (!iso) return '—';
+  const d = new Date(iso), now = new Date(), diff = now - d;
+  if (diff < 60000) return 'Gerade eben';
+  if (diff < 3600000) return 'vor ' + Math.floor(diff/60000) + ' Min.';
+  if (d.toDateString() === now.toDateString())
+    return d.toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit'}) + ' Uhr';
+  return d.toLocaleDateString('de-DE',{day:'2-digit',month:'2-digit'}) + ' ' +
+         d.toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit'}) + ' Uhr';
+}
+function toast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg; t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 2600);
+}
+function showScreen(id) {
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+  const titles = {'screen-setup':'Einrichten','screen-student':'RaumScanner',
+    'screen-success':'Eingecheckt!','screen-teacher-pin':'Lehrer-Zugang','screen-teacher':'Übersicht'};
+  document.getElementById('nav-title').textContent = titles[id] || 'RaumScanner';
+}
+
+// ── SETUP ─────────────────────────────────────────────
+function saveSetup() {
+  const name = document.getElementById('setup-name').value.trim();
+  const kl = document.getElementById('setup-class').value.trim();
+  if (!name) { toast('Bitte Namen eingeben'); return; }
+  if (!kl)   { toast('Bitte Klasse eingeben'); return; }
+  ls('name', name); ls('klasse', kl);
+  setGreeting(name, kl);
+  updateLastCard();
+  showScreen('screen-student');
+  document.getElementById('tab-student').classList.add('active');
+  document.getElementById('tab-teacher').classList.remove('active');
+}
+function showSetup() {
+  document.getElementById('setup-name').value = ls('name') || '';
+  document.getElementById('setup-class').value = ls('klasse') || '';
+  showScreen('screen-setup');
+}
+function setGreeting(name, kl) {
+  document.getElementById('greeting').textContent = 'Hallo, ' + name + '!';
+  document.getElementById('student-class-display').textContent = 'Klasse ' + kl;
+}
+function updateLastCard() {
+  const last = JSON.parse(ls('last') || 'null');
+  const card = document.getElementById('last-checkin-card');
+  if (last) {
+    card.style.display = 'block';
+    document.getElementById('last-room-name').textContent = last.raum_name || last.raum_id;
+    document.getElementById('last-time').textContent = fmtTime(last.timestamp);
+  } else { card.style.display = 'none'; }
+}
+
+// ── SCANNER ───────────────────────────────────────────
+async function startScanner() {
+  document.getElementById('scanner-container').classList.add('active');
+  let stream = null;
+  try {
+    // Rückkamera bevorzugt, aber nicht erzwingen
+    stream = await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'}}});
+  } catch(e1) {
+    try {
+      // Fallback: irgendeine Kamera
+      stream = await navigator.mediaDevices.getUserMedia({video:true});
+    } catch(e2) {
+      toast('Kamera nicht verfügbar – Berechtigung prüfen');
+      stopScanner();
+      return;
+    }
+  }
+  videoStream = stream;
+  const v = document.getElementById('scanner-video');
+  v.srcObject = stream;
+  v.onloadedmetadata = () => {
+    v.play();
+    scanning = true;
+    requestAnimationFrame(scanFrame);
+  };
+}
+function scanFrame() {
+  if (!scanning) return;
+  const v = document.getElementById('scanner-video');
+  const c = document.getElementById('scanner-canvas');
+  if (v.readyState === v.HAVE_ENOUGH_DATA) {
+    c.width = v.videoWidth; c.height = v.videoHeight;
+    const ctx = c.getContext('2d');
+    ctx.drawImage(v,0,0,c.width,c.height);
+    const img = ctx.getImageData(0,0,c.width,c.height);
+    const code = jsQR(img.data,img.width,img.height);
+    if (code) { scanning = false; stopScanner(); handleQR(code.data); return; }
+  }
+  requestAnimationFrame(scanFrame);
+}
+function stopScanner() {
+  scanning = false;
+  if (videoStream) { videoStream.getTracks().forEach(t=>t.stop()); videoStream = null; }
+  document.getElementById('scanner-container').classList.remove('active');
+}
+function handleQR(data) {
+  if (!data.startsWith('RAUM:')) { toast('Kein gültiger Raum-QR-Code'); return; }
+  const parts = data.split(':');
+  if (parts.length < 3) { toast('Ungültiger QR-Code'); return; }
+  const raumId = parts[1];
+  const raumName = parts.slice(2).join(':');
+  doCheckin(raumId, raumName);
+}
+
+// ── CHECK-IN ──────────────────────────────────────────
+async function doCheckin(raumId, raumName) {
+  const name = ls('name'), kl = ls('klasse');
+  const btn = document.getElementById('checkin-btn');
+  btn.disabled = true;
+  btn.innerHTML = '<div class="spinner"></div> Wird gespeichert...';
+  try {
+    await ensureFolder();
+    const checkin = {name, klasse:kl, raum_id:raumId, raum_name:raumName, timestamp:new Date().toISOString()};
+    const file = sanitize(name+'_'+kl) + '.json';
+    const url = CFG.base + '/' + CFG.folder + '/' + encodeURIComponent(file);
+    const r = await fetch(url, {method:'PUT', headers:{'Authorization':AUTH,'Content-Type':'application/json'}, body:JSON.stringify(checkin,null,2)});
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    ls('last', JSON.stringify(checkin));
+    updateLastCard();
+    document.getElementById('success-room').textContent = '📍 ' + raumName;
+    document.getElementById('success-time').textContent = fmtTime(checkin.timestamp);
+    showScreen('screen-success');
+  } catch(e) {
+    console.error(e);
+    if (e.message.includes('Failed to fetch')) toast('Keine Verbindung – WLAN prüfen!');
+    else toast('Fehler: ' + e.message);
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = '📷 QR-Code scannen & einchecken';
+  }
+}
+async function ensureFolder() {
+  for (const path of ['RaumScanner', CFG.folder]) {
+    await fetch(CFG.base+'/'+path, {method:'MKCOL',headers:{'Authorization':AUTH}}).catch(()=>{});
+  }
+}
+
+// ── TAB SWITCH ────────────────────────────────────────
+function switchTab(tab) {
+  document.querySelectorAll('.tab-item').forEach(t=>t.classList.remove('active'));
+  document.getElementById('tab-'+tab).classList.add('active');
+  if (tab === 'student') {
+    stopPoll();
+    showScreen(ls('name') ? 'screen-student' : 'screen-setup');
+  } else {
+    if (teacherOk) { showScreen('screen-teacher'); loadDashboard(); startPoll(); }
+    else { pinVal=''; updatePinDots(); showScreen('screen-teacher-pin'); }
+  }
+}
+
+// ── PIN ───────────────────────────────────────────────
+function pinInput(d) {
+  if (pinVal.length >= 4) return;
+  pinVal += d; updatePinDots();
+  if (pinVal.length === 4) setTimeout(checkPin, 120);
+}
+function pinBackspace() { pinVal = pinVal.slice(0,-1); updatePinDots(); }
+function pinClear()     { pinVal = ''; updatePinDots(); }
+function updatePinDots() {
+  for (let i=0;i<4;i++) document.getElementById('pd'+i).classList.toggle('filled', i < pinVal.length);
+}
+function checkPin() {
+  if (pinVal === CFG.pin) {
+    teacherOk = true;
+    showScreen('screen-teacher');
+    loadDashboard(); startPoll();
+  } else { toast('Falscher PIN'); pinVal=''; updatePinDots(); }
+}
+function teacherLogout() { teacherOk=false; stopPoll(); switchTab('student'); }
+
+// ── TEACHER DASHBOARD ─────────────────────────────────
+async function loadDashboard() {
+  try {
+    const checkins = await getAllCheckins();
+    renderDashboard(checkins);
+    document.getElementById('last-update').textContent =
+      'Zuletzt ' + new Date().toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+  } catch(e) {
+    document.getElementById('teacher-dashboard').innerHTML =
+      '<div class="empty-state"><div class="empty-icon">⚠️</div><div class="empty-title">Verbindungsfehler</div><div>'+esc(e.message)+'</div></div>';
+  }
+}
+function renderDashboard(checkins) {
+  const el = document.getElementById('teacher-dashboard');
+  if (!checkins.length) {
+    el.innerHTML = '<div class="empty-state"><div class="empty-icon">🏫</div><div class="empty-title">Noch niemand eingecheckt</div><div>Schüler scannen den QR-Code eines Raums</div></div>';
+    return;
+  }
+  const rooms = {};
+  checkins.forEach(c => {
+    const k = c.raum_id||'?';
+    if (!rooms[k]) rooms[k] = {name:c.raum_name||k, students:[]};
+    rooms[k].students.push(c);
+  });
+  Object.values(rooms).forEach(r => r.students.sort((a,b)=>a.name.localeCompare(b.name)));
+  const total = checkins.length, rc = Object.keys(rooms).length;
+  let html = `<div style="text-align:center;font-size:14px;color:var(--text3);margin-bottom:12px">${total} Schüler in ${rc} Raum${rc!==1?'en':''}</div>`;
+  Object.entries(rooms).sort(([,a],[,b])=>a.name.localeCompare(b.name)).forEach(([,room]) => {
+    html += `<div class="room-card"><div class="room-header"><span>📍</span><span class="room-title">${esc(room.name)}</span><span class="room-count">${room.students.length}</span></div>`;
+    room.students.forEach(s => {
+      const init = s.name.split(' ').map(n=>n[0]||'').join('').substring(0,2).toUpperCase();
+      html += `<div class="student-row"><div class="student-avatar">${esc(init)}</div><div class="card-content"><div class="student-name">${esc(s.name)}</div><div class="student-meta">Klasse ${esc(s.klasse)} · ${fmtTime(s.timestamp)}</div></div></div>`;
+    });
+    html += `</div>`;
+  });
+  el.innerHTML = html;
+}
+async function getAllCheckins() {
+  const url = CFG.base + '/' + CFG.folder + '/';
+  const r = await fetch(url, {method:'PROPFIND', headers:{'Authorization':AUTH,'Depth':'1','Content-Type':'application/xml'}, body:'<?xml version="1.0"?><d:propfind xmlns:d="DAV:"><d:prop><d:getlastmodified/></d:prop></d:propfind>'});
+  if (!r.ok) { if (r.status===404){await ensureFolder();return[];} throw new Error('PROPFIND '+r.status); }
+  const xml = new DOMParser().parseFromString(await r.text(),'application/xml');
+  const hrefs = Array.from(xml.querySelectorAll('response href'))
+    .map(e=>decodeURIComponent(e.textContent.trim()))
+    .filter(h=>h.endsWith('.json'));
+  const results = await Promise.all(hrefs.map(async h => {
+    try {
+      const fr = await fetch('https://cloudfiles.senckenberg-runkel.de'+h,{headers:{'Authorization':AUTH}});
+      return fr.ok ? fr.json() : null;
+    } catch {return null;}
+  }));
+  return results.filter(Boolean);
+}
+function startPoll() { stopPoll(); pollTimer = setInterval(()=>{ if(document.getElementById('screen-teacher').classList.contains('active')) loadDashboard(); }, CFG.poll); }
+function stopPoll()  { if(pollTimer){clearInterval(pollTimer);pollTimer=null;} }
+
+// ── QR GENERATOR ──────────────────────────────────────
+function generateQR() {
+  const id = document.getElementById('qr-id').value.trim().toUpperCase().replace(/\s+/g,'');
+  const name = document.getElementById('qr-name').value.trim();
+  if (!id||!name) { toast('Raum-ID und Name eingeben'); return; }
+  const data = 'RAUM:'+id+':'+name;
+  QRCode.toCanvas(document.getElementById('qr-canvas'), data,
+    {width:220,margin:2,color:{dark:'#1C1C1E',light:'#FFFFFF'}}, err => {
+    if (err) { toast('Fehler beim QR-Code'); return; }
+    document.getElementById('qr-label').textContent = name + ' (' + id + ')';
+    document.getElementById('qr-result').style.display = 'flex';
+  });
+}
+function downloadQR() {
+  const name = document.getElementById('qr-name').value.trim().replace(/\s+/g,'_') || 'raum';
+  const a = document.createElement('a');
+  a.download = 'QR_' + name + '.png';
+  a.href = document.getElementById('qr-canvas').toDataURL();
+  a.click();
+}
+</script>
+</body>
+</html>
