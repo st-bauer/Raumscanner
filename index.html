@@ -7,7 +7,7 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black">
   <meta name="apple-mobile-web-app-title" content="RaumScanner">
   <meta name="theme-color" content="#007AFF">
-  <title>RaumScanner V1.3</title>
+  <title>RaumScanner V1.4</title>
   <style>
     :root {
       --blue:#007AFF; --green:#34C759; --red:#FF3B30; --orange:#FF9500; --purple:#AF52DE;
@@ -139,13 +139,26 @@
     .cap-fill.green{background:var(--green)}
     .cap-fill.yellow{background:var(--orange)}
     .cap-fill.red{background:var(--red)}
+    /* Warn banner */
+    .warn-banner{display:none;background:#FFF3CD;border:1.5px solid var(--orange);border-radius:var(--r);padding:13px 16px;margin-bottom:12px;gap:10px;align-items:flex-start}
+    .warn-banner.active{display:flex}
+    .warn-banner-icon{font-size:22px;flex-shrink:0;margin-top:1px}
+    .warn-banner-text{flex:1;font-size:14px;color:#7D4E00;line-height:1.5}
+    .warn-banner-title{font-weight:700;font-size:15px;margin-bottom:2px}
+    /* Search */
+    .search-wrap{position:relative;margin-bottom:14px}
+    .search-input{width:100%;padding:11px 16px 11px 38px;border-radius:var(--r);border:1.5px solid var(--border);background:var(--card);font-size:15px;color:var(--text);-webkit-appearance:none}
+    .search-input:focus{outline:none;border-color:var(--blue)}
+    .search-icon{position:absolute;left:12px;top:50%;transform:translateY(-50%);font-size:16px;pointer-events:none}
+    .search-clear{position:absolute;right:10px;top:50%;transform:translateY(-50%);background:var(--text3);color:#fff;border:none;border-radius:50%;width:18px;height:18px;font-size:11px;cursor:pointer;display:none;align-items:center;justify-content:center}
+    .search-clear.visible{display:flex}
   </style>
 </head>
 <body>
 <div class="app">
   <div class="safe-top"></div>
   <div class="nav-header">
-    <div class="nav-side"><span id="nav-version" style="font-size:11px;color:var(--text3)">V1.3</span></div>
+    <div class="nav-side"><span id="nav-version" style="font-size:11px;color:var(--text3)">V1.4</span></div>
     <div class="nav-title" id="nav-title">RaumScanner</div>
     <div class="nav-side right" id="nav-right"></div>
   </div>
@@ -198,8 +211,17 @@
       </div>
       <button class="btn btn-outline" onclick="showSetupStudent()" style="margin-top:8px">✏️ Namen ändern</button>
 
+      <!-- Warn Banner -->
+      <div class="warn-banner" id="warn-banner">
+        <div class="warn-banner-icon">⚠️</div>
+        <div class="warn-banner-text">
+          <div class="warn-banner-title" id="warn-banner-title">Raum nicht mehr betreut</div>
+          <div id="warn-banner-msg">Bitte in einen anderen Raum wechseln.</div>
+        </div>
+      </div>
+
       <!-- Raumübersicht -->
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-top:20px;margin-bottom:4px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-top:4px;margin-bottom:4px">
         <div class="sec-header" style="margin:0">Raumübersicht</div>
         <button onclick="loadRoomOverview()" style="background:none;border:none;color:var(--blue);font-size:14px;cursor:pointer;padding:4px">↻ Aktualisieren</button>
       </div>
@@ -275,12 +297,17 @@
 
     <!-- ── LERNBEGLEITER ÜBERSICHT ── -->
     <div class="screen" id="screen-t-overview">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
         <div style="display:flex;align-items:center;gap:7px">
           <span class="pulse"></span>
           <span style="font-size:13px;color:var(--text3)">Live · alle 10 Sek.</span>
         </div>
         <span style="font-size:13px;color:var(--text3)" id="t-last-update">—</span>
+      </div>
+      <div class="search-wrap">
+        <span class="search-icon">🔍</span>
+        <input type="search" class="search-input" id="t-search" placeholder="Lernende suchen …" oninput="onSearchInput(this.value)">
+        <button class="search-clear" id="t-search-clear" onclick="clearSearch()">✕</button>
       </div>
       <div id="t-dashboard">
         <div class="empty"><div class="spinner" style="width:28px;height:28px;margin:0 auto"></div></div>
@@ -426,6 +453,7 @@ let mainTab = 'student', studentSubTab = 'checkin', teacherSubTab = 'overview';
 let teacherUnlocked = false, pinVal = '', pollTimer = null, roTimer = null;
 let videoStream = null, scanning = false, scanContext = 'student';
 let currentModalFile = null;
+let lastCheckins = [], searchQuery = '';
 
 // ── UTILS ────────────────────────────────────────────────────────
 const $ = id => document.getElementById(id);
@@ -574,6 +602,7 @@ function switchTeacherTab(tab) {
   ['overview','checkin','qr'].forEach(t => { $('ttab-'+t).classList.toggle('active', t===tab); });
   if (tab === 'overview') {
     showScreen('screen-t-overview'); $('nav-title').textContent = 'Übersicht';
+    searchQuery = ''; $('t-search').value = ''; $('t-search-clear').classList.remove('visible');
     loadDashboard(); startPoll();
   } else if (tab === 'checkin') {
     stopPoll();
@@ -806,13 +835,29 @@ function renderRoomOverview(all) {
   const el = $('room-overview-content');
   if (!el) return;
   const todayStr = today();
-  const active = all.filter(c => c.date === todayStr && c.raum_id);
+  const active   = all.filter(c => c.date === todayStr && c.raum_id);
   const teachers = active.filter(c => c.type === 'lehrer');
   const students = active.filter(c => c.type !== 'lehrer');
 
-  const capacityRooms = ROOMS.filter(r => r.capacity !== null);
-  const personalRooms = ROOMS.filter(r => r.capacity === null);
+  // Warn banner: student is in a capacity room with no Lernbegleiter?
+  const myCurrent = lsJson('s_current');
+  const myRoomId  = myCurrent && myCurrent.date === todayStr ? myCurrent.raum_id : null;
+  const myRoom    = myRoomId ? ROOMS.find(r => r.id === myRoomId) : null;
+  if (myRoom && myRoom.capacity !== null) {
+    const hasTeacher = teachers.some(t => t.raum_id === myRoomId);
+    if (!hasTeacher) {
+      $('warn-banner-title').textContent = '⚠️ ' + myRoom.name + ' – kein Lernbegleiter mehr vor Ort';
+      $('warn-banner-msg').textContent   = 'Bitte wechsle jetzt in einen betreuten Raum.';
+      $('warn-banner').classList.add('active');
+    } else {
+      $('warn-banner').classList.remove('active');
+    }
+  } else {
+    $('warn-banner').classList.remove('active');
+  }
 
+  // Only capacity rooms in student overview
+  const capacityRooms = ROOMS.filter(r => r.capacity !== null);
   let html = '<div class="sec-header" style="margin-top:4px">Räume mit freien Plätzen</div>';
 
   capacityRooms.forEach(room => {
@@ -841,24 +886,6 @@ function renderRoomOverview(all) {
     html += `</div></div>`;
   });
 
-  html += '<div class="sec-header" style="margin-top:16px">Lernbüros</div>';
-
-  personalRooms.forEach(room => {
-    const teacherThere = teachers.find(t => t.raum_id === room.id);
-
-    html += `<div class="ro-card">
-      <div class="ro-inner">
-        <div class="ro-icon">${room.emoji}</div>
-        <div class="ro-info">
-          <div class="ro-name">${esc(room.name)}</div>
-          <div class="ro-sub">${teacherThere
-            ? 'Lernbegleiter vor Ort · ' + esc(teacherThere.name)
-            : 'Persönlicher Lernplatz'}</div>
-        </div>
-      </div>
-    </div>`;
-  });
-
   el.innerHTML = html;
 }
 
@@ -866,7 +893,7 @@ function startRoTimer() {
   stopRoTimer();
   roTimer = setInterval(() => {
     if ($('screen-s-checkin').classList.contains('active')) loadRoomOverview();
-  }, 30000);
+  }, 10000);
 }
 function stopRoTimer() { if(roTimer){clearInterval(roTimer);roTimer=null;} }
 
@@ -874,25 +901,47 @@ function stopRoTimer() { if(roTimer){clearInterval(roTimer);roTimer=null;} }
 async function loadDashboard() {
   try {
     const all = await getAllCheckins();
+    lastCheckins = all;
     const todayStr = today();
-    const active = all.filter(c => c.date === todayStr && c.raum_id);
+    const active   = all.filter(c => c.date === todayStr && c.raum_id);
     const teachers = active.filter(c => c.type === 'lehrer');
     const students = active.filter(c => c.type !== 'lehrer');
-    renderDashboard(teachers, students, all);
+    renderDashboard(teachers, students, searchQuery);
     $('t-last-update').textContent = new Date().toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
   } catch(e) {
     $('t-dashboard').innerHTML = `<div class="empty"><div class="empty-icon">⚠️</div><div class="empty-title">Verbindungsfehler</div><div>${esc(e.message)}</div></div>`;
   }
 }
-function renderDashboard(teachers, students, all) {
+
+function renderDashboard(teachers, students, query) {
   const el = $('t-dashboard');
-  if (!teachers.length && !students.length) {
-    el.innerHTML = '<div class="empty"><div class="empty-icon">🏫</div><div class="empty-title">Noch niemand eingecheckt</div><div>Lernende und Lernbegleiter scannen den QR-Code</div></div>';
+  const q  = (query||'').toLowerCase().trim();
+
+  // Filter students by search query
+  const filteredStudents = q
+    ? students.filter(s =>
+        s.name.toLowerCase().includes(q) ||
+        (s.klasse||'').toLowerCase().includes(q) ||
+        (s.raum_name||'').toLowerCase().includes(q) ||
+        (s.raum_id||'').toLowerCase().includes(q))
+    : students;
+
+  if (!teachers.length && !filteredStudents.length) {
+    el.innerHTML = q
+      ? `<div class="empty"><div class="empty-icon">🔍</div><div class="empty-title">Keine Treffer für „${esc(q)}"</div></div>`
+      : '<div class="empty"><div class="empty-icon">🏫</div><div class="empty-title">Noch niemand eingecheckt</div><div>Lernende und Lernbegleiter scannen den QR-Code</div></div>';
     return;
   }
-  let html = `<div style="text-align:center;font-size:14px;color:var(--text3);margin-bottom:14px">${students.length} Lernende · ${teachers.length} Lernbegleiter</div>`;
 
-  if (teachers.length) {
+  let html = '';
+  if (!q) {
+    html += `<div style="text-align:center;font-size:14px;color:var(--text3);margin-bottom:14px">${students.length} Lernende · ${teachers.length} Lernbegleiter</div>`;
+  } else {
+    html += `<div style="text-align:center;font-size:14px;color:var(--text3);margin-bottom:14px">${filteredStudents.length} Treffer für „${esc(q)}"</div>`;
+  }
+
+  // Lernbegleiter section (never filtered)
+  if (teachers.length && !q) {
     html += `<div class="room-card"><div class="room-header purple">👨‍🏫 <span class="room-title">Lernbegleiter</span><span class="room-count">${teachers.length}</span></div>`;
     teachers.sort((a,b)=>a.name.localeCompare(b.name)).forEach(t => {
       html += `<div class="person-row" onclick="openHistoryModal('${sanitize(t.name+'_lehrer')}.json','${esc(t.name)}')">
@@ -903,27 +952,84 @@ function renderDashboard(teachers, students, all) {
     html += `</div>`;
   }
 
-  const rooms = {};
-  students.forEach(s => {
-    const k = s.raum_id || '?';
-    if (!rooms[k]) rooms[k] = {name:s.raum_name||k, students:[]};
-    rooms[k].students.push(s);
-  });
-  Object.values(rooms).forEach(r => r.students.sort((a,b)=>a.name.localeCompare(b.name)));
-
-  Object.entries(rooms).sort(([,a],[,b])=>a.name.localeCompare(b.name)).forEach(([,room]) => {
-    html += `<div class="room-card"><div class="room-header">📍 <span class="room-title">${esc(room.name)}</span><span class="room-count">${room.students.length}</span></div>`;
-    room.students.forEach(s => {
+  // Search result: flat list
+  if (q) {
+    filteredStudents.sort((a,b)=>a.name.localeCompare(b.name)).forEach(s => {
       const fname = sanitize(s.name+'_'+(s.klasse||''))+'.json';
-      html += `<div class="person-row" onclick="openHistoryModal('${fname}','${esc(s.name)}')">
+      html += `<div class="room-card"><div class="person-row" onclick="openHistoryModal('${fname}','${esc(s.name)}')">
         <div class="avatar avatar-s">${esc(initials(s.name))}</div>
-        <div class="card-content"><div class="person-name">${esc(s.name)}</div><div class="person-meta">Klasse ${esc(s.klasse)} · ${fmtTime(s.timestamp)}</div></div>
-        <div style="color:var(--text3);font-size:18px">›</div></div>`;
+        <div class="card-content">
+          <div class="person-name">${esc(s.name)}</div>
+          <div class="person-meta">📍 ${esc(s.raum_name)} · Klasse ${esc(s.klasse)} · ${fmtTime(s.timestamp)}</div>
+        </div>
+        <div style="color:var(--text3);font-size:18px">›</div></div></div>`;
     });
-    html += `</div>`;
+    el.innerHTML = html;
+    return;
+  }
+
+  // Separate Lernbüros from other rooms
+  const lernbueroIds = new Set(ROOMS.filter(r => r.capacity === null).map(r => r.id));
+  const roomMap = {}, lernbueroMap = {};
+  filteredStudents.forEach(s => {
+    const k = s.raum_id || '?';
+    if (lernbueroIds.has(k)) {
+      if (!lernbueroMap[k]) lernbueroMap[k] = {name: s.raum_name||k, students:[]};
+      lernbueroMap[k].students.push(s);
+    } else {
+      if (!roomMap[k]) roomMap[k] = {name: s.raum_name||k, students:[]};
+      roomMap[k].students.push(s);
+    }
   });
+  [roomMap, lernbueroMap].forEach(m => Object.values(m).forEach(r => r.students.sort((a,b)=>a.name.localeCompare(b.name))));
+
+  // Capacity rooms with students
+  if (Object.keys(roomMap).length) {
+    Object.entries(roomMap).sort(([,a],[,b])=>a.name.localeCompare(b.name)).forEach(([,room]) => {
+      html += `<div class="room-card"><div class="room-header">📍 <span class="room-title">${esc(room.name)}</span><span class="room-count">${room.students.length}</span></div>`;
+      room.students.forEach(s => {
+        const fname = sanitize(s.name+'_'+(s.klasse||''))+'.json';
+        html += `<div class="person-row" onclick="openHistoryModal('${fname}','${esc(s.name)}')">
+          <div class="avatar avatar-s">${esc(initials(s.name))}</div>
+          <div class="card-content"><div class="person-name">${esc(s.name)}</div><div class="person-meta">Klasse ${esc(s.klasse)} · ${fmtTime(s.timestamp)}</div></div>
+          <div style="color:var(--text3);font-size:18px">›</div></div>`;
+      });
+      html += `</div>`;
+    });
+  }
+
+  // Lernbüros with students
+  if (Object.keys(lernbueroMap).length) {
+    html += `<div style="font-size:13px;color:var(--text3);text-transform:uppercase;letter-spacing:.05em;margin:16px 0 8px 4px">Lernbüros</div>`;
+    Object.entries(lernbueroMap).sort(([,a],[,b])=>a.name.localeCompare(b.name)).forEach(([,room]) => {
+      html += `<div class="room-card"><div class="room-header" style="background:var(--green)">📚 <span class="room-title">${esc(room.name)}</span><span class="room-count">${room.students.length}</span></div>`;
+      room.students.forEach(s => {
+        const fname = sanitize(s.name+'_'+(s.klasse||''))+'.json';
+        html += `<div class="person-row" onclick="openHistoryModal('${fname}','${esc(s.name)}')">
+          <div class="avatar avatar-s">${esc(initials(s.name))}</div>
+          <div class="card-content"><div class="person-name">${esc(s.name)}</div><div class="person-meta">Klasse ${esc(s.klasse)} · ${fmtTime(s.timestamp)}</div></div>
+          <div style="color:var(--text3);font-size:18px">›</div></div>`;
+      });
+      html += `</div>`;
+    });
+  }
 
   el.innerHTML = html;
+}
+
+// ── SUCHE ────────────────────────────────────────────────────────
+function onSearchInput(val) {
+  searchQuery = val;
+  $('t-search-clear').classList.toggle('visible', val.length > 0);
+  if (!lastCheckins.length) return;
+  const todayStr = today();
+  const active   = lastCheckins.filter(c => c.date === todayStr && c.raum_id);
+  renderDashboard(active.filter(c=>c.type==='lehrer'), active.filter(c=>c.type!=='lehrer'), val);
+}
+function clearSearch() {
+  $('t-search').value = '';
+  onSearchInput('');
+  $('t-search').focus();
 }
 function startPoll() { stopPoll(); pollTimer = setInterval(()=>{ if($('screen-t-overview').classList.contains('active')) loadDashboard(); }, CFG.poll); }
 function stopPoll()  { if(pollTimer){clearInterval(pollTimer);pollTimer=null;} }
